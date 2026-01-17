@@ -1,7 +1,7 @@
 /**
  * Flask Server Availability Check Utility
- * 
- * Checks if the Flask server is running on port 5000
+ *
+ * Checks if the Flask server is running (default: localhost:5001)
  */
 
 const FLASK_SERVER_URL = 'http://localhost:5001';
@@ -10,70 +10,55 @@ const FLASK_HEALTH_ENDPOINT = `${FLASK_SERVER_URL}/health`;
 let flaskAvailable = null;
 let checkPromise = null;
 
-/**
- * Check if Flask server is available
- * @returns {Promise<boolean>} True if Flask server is available
- */
 export async function checkFlaskAvailability() {
-  // Return cached result if available
-  if (flaskAvailable !== null) {
-    return flaskAvailable;
-  }
+  if (flaskAvailable !== null) return flaskAvailable;
+  if (checkPromise) return checkPromise;
 
-  // Return existing promise if check is in progress
-  if (checkPromise) {
-    return checkPromise;
-  }
-
-  // Perform check
   checkPromise = fetch(FLASK_HEALTH_ENDPOINT, {
     method: 'GET',
     mode: 'cors',
     cache: 'no-cache',
-    signal: AbortSignal.timeout(2000) // 2 second timeout
+    signal: AbortSignal.timeout(2000),
   })
-    .then(response => {
-      if (response.ok) {
-        flaskAvailable = true;
-        return true;
-      } else {
-        flaskAvailable = false;
-        return false;
-      }
+    .then((response) => {
+      flaskAvailable = response.ok;
+      return flaskAvailable;
     })
-    .catch(error => {
-      // Network error or timeout - Flask not available
+    .catch(() => {
       flaskAvailable = false;
       return false;
     })
     .finally(() => {
-      // Clear promise after completion
       checkPromise = null;
     });
 
   return checkPromise;
 }
 
-/**
- * Reset the cached availability status
- * Useful for re-checking after starting Flask server
- */
 export function resetFlaskAvailability() {
   flaskAvailable = null;
   checkPromise = null;
 }
 
-/**
- * Get Flask server URL
- */
 export function getFlaskServerUrl() {
   return FLASK_SERVER_URL;
 }
 
-/**
- * Get Flask API endpoint for running nodes
- */
+/** ✅ NEW: return the port number from the URL */
+export function getFlaskPort() {
+  try {
+    const u = new URL(FLASK_SERVER_URL);
+    // If someone sets FLASK_SERVER_URL without a port, fall back to protocol default
+    if (u.port) return u.port;
+    return u.protocol === 'https:' ? '443' : '80';
+  } catch {
+    // Safe fallback for weird environments
+    return '5001';
+  }
+}
+
 export function getFlaskRunEndpoint() {
   return `${FLASK_SERVER_URL}/api/nodes/run`;
 }
+
 

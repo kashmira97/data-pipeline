@@ -7,7 +7,8 @@ import NodeDetailPanel from '../components/NodeDetailPanel';
 import DraggableModal from '../components/DraggableModal';
 import FloatingDetailPanel from '../components/FloatingDetailPanel';
 import DraggableFlowChart from '../components/DraggableFlowChart';
-import { checkFlaskAvailability, resetFlaskAvailability } from '../utils/flaskCheck';
+import { checkFlaskAvailability, resetFlaskAvailability, getFlaskServerUrl, getFlaskPort } from '../utils/flaskCheck';
+
 
 export default function Home() {
   const [mounted, setMounted] = useState(false);
@@ -19,6 +20,8 @@ export default function Home() {
   const [panelZIndex, setPanelZIndex] = useState({ list: 40, chart: 41, detail: 42 });
   const [highlightedNode, setHighlightedNode] = useState(null);
   const [flaskAvailable, setFlaskAvailable] = useState(null); // null = checking, true = available, false = unavailable
+const flaskUrl = getFlaskServerUrl();
+const flaskPort = getFlaskPort();
 
   // Ensure hydration completes before rendering client-specific content
   useEffect(() => {
@@ -63,17 +66,21 @@ export default function Home() {
   };
 
   // Check Flask availability on mount
-  useEffect(() => {
-    const checkFlask = async () => {
-      const available = await checkFlaskAvailability();
-      setFlaskAvailable(available);
-    };
-    checkFlask();
-    
-    // Re-check every 30 seconds
-    const interval = setInterval(checkFlask, 30000);
-    return () => clearInterval(interval);
-  }, []);
+ useEffect(() => {
+  const checkFlask = async () => {
+    // ✅ clear cached value each time so status can flip from false -> true
+    resetFlaskAvailability();
+    const available = await checkFlaskAvailability();
+    setFlaskAvailable(available);
+  };
+
+  checkFlask();
+
+  // Re-check every 10 seconds (faster feedback while developing)
+  const interval = setInterval(checkFlask, 10000);
+  return () => clearInterval(interval);
+}, []);
+
 
   const handleRetryFlaskCheck = async () => {
     resetFlaskAvailability();
@@ -93,31 +100,101 @@ export default function Home() {
 
       <div className={`min-h-screen bg-gray-900 light:bg-yellow-50 ${listPosition === 'floating' ? 'overflow-auto' : ''}`} style={listPosition === 'floating' ? { height: '100vh' } : {}}>
         {/* Flask Availability Banner - only render after mount to avoid hydration mismatch */}
-        {mounted && flaskAvailable === false && (
-          <div className="bg-orange-500/20 border-b border-orange-500/50 px-6 py-3 flex items-center justify-between relative z-50">
-            <div className="flex items-center gap-3">
-              <span className="text-orange-400">⚠️</span>
-              <span className="text-orange-300 light:text-orange-700">
-                Flask Server is not running on port 5001
-              </span>
-            </div>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={handleRetryFlaskCheck}
-                className="text-sm px-3 py-1 bg-orange-500/30 hover:bg-orange-500/50 rounded border border-orange-500/50 text-orange-200 light:text-orange-800"
-              >
-                Retry Check
-              </button>
-              <a
-                href="../flask"
-                target="_blank"
-                className="text-sm px-3 py-1 bg-blue-500/30 hover:bg-blue-500/50 rounded border border-blue-500/50 text-blue-200 light:text-blue-800"
-              >
-                Activate Flask Server
-              </a>
-            </div>
+        {/* Flask Status Banner - only render after mount to avoid hydration mismatch */}
+{mounted && (
+  (() => {
+    const isRemote =
+      typeof window !== 'undefined' &&
+      window.location.hostname !== 'localhost' &&
+      window.location.hostname !== '127.0.0.1';
+
+    // Text variations
+    const checkingText = `Checking Flask on ${flaskUrl} (port ${flaskPort})...`;
+    const connectedText = `Connected to Flask on ${flaskUrl} (port ${flaskPort})`;
+    const notConnectedLocalText = `Flask is not reachable at ${flaskUrl} (port ${flaskPort})`;
+    const notConnectedRemoteText = `This hosted page can't reach your local Flask (${flaskUrl}, port ${flaskPort}). Run the admin UI locally to connect.`;
+
+    // Styles
+    const baseClass =
+      "border-b px-6 py-3 flex items-center justify-between relative z-50";
+    const greenClass = "bg-green-500/15 border-green-500/40";
+    const orangeClass = "bg-orange-500/20 border-orange-500/50";
+    const grayClass = "bg-gray-500/10 border-gray-500/30";
+
+    if (flaskAvailable === null) {
+      return (
+        <div className={`${baseClass} ${grayClass}`}>
+          <div className="flex items-center gap-3">
+            <span className="text-gray-300">⏳</span>
+            <span className="text-gray-200 light:text-gray-800">
+              {checkingText}
+            </span>
           </div>
-        )}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleRetryFlaskCheck}
+              className="text-sm px-3 py-1 bg-gray-500/20 hover:bg-gray-500/30 rounded border border-gray-500/30 text-gray-200 light:text-gray-800"
+            >
+              Re-check
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    if (flaskAvailable === true) {
+      return (
+        <div className={`${baseClass} ${greenClass}`}>
+          <div className="flex items-center gap-3">
+            <span className="text-green-300">✅</span>
+            <span className="text-green-200 light:text-green-800">
+              {connectedText}
+            </span>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleRetryFlaskCheck}
+              className="text-sm px-3 py-1 bg-green-500/20 hover:bg-green-500/30 rounded border border-green-500/30 text-green-100 light:text-green-800"
+            >
+              Re-check
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // flaskAvailable === false
+    return (
+      <div className={`${baseClass} ${orangeClass}`}>
+        <div className="flex items-center gap-3">
+          <span className="text-orange-400">⚠️</span>
+          <span className="text-orange-300 light:text-orange-700">
+            {isRemote ? notConnectedRemoteText : notConnectedLocalText}
+          </span>
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleRetryFlaskCheck}
+            className="text-sm px-3 py-1 bg-orange-500/30 hover:bg-orange-500/50 rounded border border-orange-500/50 text-orange-200 light:text-orange-800"
+          >
+            Retry Check
+          </button>
+
+          {/* Local activation link (this is what you shared: localhost:8887/data-pipeline/flask/) */}
+          <a
+            href="http://localhost:8887/data-pipeline/flask/"
+            target="_blank"
+            rel="noreferrer"
+            className="text-sm px-3 py-1 bg-blue-500/30 hover:bg-blue-500/50 rounded border border-blue-500/50 text-blue-200 light:text-blue-800"
+          >
+            Activate Flask Server
+          </a>
+        </div>
+      </div>
+    );
+  })()
+)}
+
         
         {/* Top Bar */}
         <div className="flex items-center justify-between p-6 border-b border-gray-700 light:border-gray-400 relative z-50">
